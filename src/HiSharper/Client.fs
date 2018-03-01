@@ -1,39 +1,67 @@
 namespace HiSharper
 
 open WebSharper
-open WebSharper.JavaScript
-open WebSharper.JQuery
 open WebSharper.UI
 open WebSharper.UI.Client
 open WebSharper.UI.Templating
+open WebSharper.UI.Html
+open WebSharper.UI.Server
+open WebSharper.Sitelets
+
+type EndPoint =
+    | [<EndPoint "/">] Home
+    | [<EndPoint "/about">] Abou
+
+module Server =
+
+    [<Rpc>]
+    let DoSomething input =
+        let R (s: string) = System.String(Array.rev(s.ToCharArray()))
+        async {
+            return R input
+        }
+
+module Templating = 
+
+    type MainTemplate = Templating.Template<"Main.html">
+
+    let Main ctx action (title: string) (body: Doc list) =
+        Content.Page(
+            MainTemplate()
+                .MenuBar(h4 [] [text title])
+                .Body(body)
+                .Doc()
+        )
 
 [<JavaScript>]
 module Client =
-    // The templates are loaded from the DOM, so you just can edit index.html
-    // and refresh your browser, no need to recompile unless you add or remove holes.
-    type IndexTemplate = Template<"wwwroot/index.html", ClientLoad.FromDocument>
-
-    let People =
-        ListModel.FromSeq [
-            "John"
-            "Paul"
+    let Main () =
+        let rvInput = Var.Create ""
+        let submit = Submitter.CreateOption rvInput.View
+        let vReversed =
+            submit.View.MapAsync(function
+                | None -> async { return "" }
+                | Some input -> Server.DoSomething input
+            )
+        div [] [
+            Doc.Input [] rvInput
+            Doc.Button "Send" [] submit.Trigger
+            hr [] []
+            h4 [attr.``class`` "text-muted"] [text "The server responded:"]
+            div [attr.``class`` "jumbotron"] [h1 [] [textView vReversed]]
         ]
 
+module Site = 
+    let HomePage ctx =
+        Templating.Main ctx EndPoint.Home "Home" [
+            h1 [] [text "Say Hi to the server!"]
+            div [] [client <@ Client.Main() @>]
+        ]
 
-    [<SPAEntryPoint>]
-    let Main () =
-        let newName = Var.Create ""
+    [<Website>]
+    let Main =
+        Application.MultiPage (fun ctx endpoint ->
+            match endpoint with
+            | EndPoint.Home -> HomePage ctx
+        )
 
-        IndexTemplate.Main()
-            .ListContainer(
-                People.View.DocSeqCached(fun (name: string) ->
-                    IndexTemplate.ListItem().Name(name).Doc()
-                )
-            )
-            .Name(newName)
-            .Add(fun _ ->
-                People.Add(newName.Value)
-                newName.Value <- ""
-            )
-            .Doc()
-        |> Doc.RunById "main"

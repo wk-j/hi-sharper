@@ -11,4 +11,5 @@ tools
 
 .paket
 
-**/wwwroot/Content
+
+wwwroot
